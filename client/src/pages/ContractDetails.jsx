@@ -1,235 +1,224 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import { supabase } from '../utils/supabase';
 import { useAuth } from '../context/AuthContext';
-import io from 'socket.io-client';
-import { MessageSquare, Send, CheckCircle, Package, DollarSign, Clock, ShieldCheck, User, Zap } from 'lucide-react';
-import { format } from 'date-fns';
+import { 
+  FileText, 
+  CheckCircle, 
+  Clock, 
+  DollarSign, 
+  MessageSquare, 
+  ChevronLeft, 
+  ShieldCheck, 
+  Briefcase, 
+  Calendar,
+  AlertCircle,
+  Zap,
+  Loader2,
+  Lock,
+  ArrowRight,
+  ShieldAlert
+} from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 const ContractDetails = () => {
   const { id } = useParams();
   const { user } = useAuth();
   const navigate = useNavigate();
   const [contract, setContract] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
-  const [paying, setPaying] = useState(false);
-  const socketRef = useRef();
-  const msgsEndRef = useRef();
+  const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    const fetchData = async () => {
-      try {
-        setLoading(true);
-        const [cRes, mRes] = await Promise.all([
-          axios.get(`http://localhost:5000/api/contracts`), // Fetching all since I don't have individual GET yet
-          axios.get(`http://localhost:5000/api/chat/${id}`)
-        ]);
-        
-        const currentContract = cRes.data.data.contracts.find(c => c.id === id);
-        setContract(currentContract);
-        setMessages(mRes.data.data.messages);
-      } catch (err) {
-        console.error('Fetch data failed', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-
-    // Socket Setup
-    socketRef.current = io('http://localhost:5000');
-    socketRef.current.emit('join_contract', id);
-    
-    socketRef.current.on('new_message', (msg) => {
-      setMessages(prev => [...prev, msg]);
-    });
-
-    return () => {
-      socketRef.current.disconnect();
-    };
+    fetchContractDetails();
   }, [id]);
 
-  useEffect(() => {
-    msgsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const handleSendMessage = async (e) => {
-    e.preventDefault();
-    if (!newMessage.trim()) return;
+  const fetchContractDetails = async () => {
     try {
-      await axios.post('http://localhost:5000/api/chat/send', { contract_id: id, content: newMessage });
-      setNewMessage('');
-    } catch (err) {
-      console.error('Send message failed', err);
-    }
-  };
+      const { data, error: fetchError } = await supabase
+        .from('contracts')
+        .select(`
+          *,
+          gig:gigs(*),
+          freelancer:users!contracts_freelancer_id_fkey(*),
+          client:users!contracts_client_id_fkey(*)
+        `)
+        .eq('id', id)
+        .single();
 
-  const handlePayment = async () => {
-    setPaying(true);
-    try {
-      const res = await axios.post('http://localhost:5000/api/contracts/checkout', { contract_id: id });
-      window.location.href = res.data.data.url;
+      if (data) setContract(data);
     } catch (err) {
-      alert(err.response?.data?.message || 'Payment initiation failed');
+      console.error('Fetch contract failed', err);
+      setError('Contract data encrypted or not found.');
     } finally {
-      setPaying(false);
+      setLoading(false);
     }
   };
 
-  const handleDelivery = async () => {
+  const handleUpdateStatus = async (newStatus) => {
+    setActionLoading(true);
     try {
-      await axios.post(`http://localhost:5000/api/contracts/${id}/deliver`);
-      alert('Mission marked as delivered! Awaiting client approval.');
-      window.location.reload();
+      const { error: updateError } = await supabase
+        .from('contracts')
+        .update({ status: newStatus })
+        .eq('id', id);
+
+      if (updateError) throw updateError;
+      
+      // Update local state
+      setContract({ ...contract, status: newStatus });
+      
+      // If completed, update gig status too
+      if (newStatus === 'completed') {
+        await supabase.from('gigs').update({ status: 'completed' }).eq('id', contract.gig_id);
+      }
     } catch (err) {
-      alert(err.response?.data?.message || 'Delivery marking failed');
+      console.error('Update status failed', err);
+      alert('Mission update unsuccessful.');
+    } finally {
+      setActionLoading(false);
     }
   };
 
-  const handleApproval = async () => {
-    try {
-      await axios.post(`http://localhost:5000/api/contracts/${id}/approve`);
-      alert('Mission approved and funds released!');
-      window.location.reload();
-    } catch (err) {
-      alert(err.response?.data?.message || 'Approval failed');
-    }
-  };
+  if (loading) return <div className="container py-20 text-center animate-pulse text-indigo-400 font-extrabold text-2xl uppercase tracking-[0.2em]">Synchronizing Secure Contract Data...</div>;
+  if (error) return <div className="container py-20 text-center text-rose-400 font-black">{error}</div>;
 
-  if (loading) return <div className="container py-20 text-center animate-pulse font-black text-4xl text-slate-700">Connecting to Sphere...</div>;
-  if (!contract) return <div className="container py-20 text-center">Contract Not Found</div>;
-
-  const otherUser = user.role === 'client' ? contract.freelancer : contract.client;
+  const isClient = user && user.id === contract.client_id;
+  const isFreelancer = user && user.id === contract.freelancer_id;
 
   return (
-    <div className="container px-6 grid lg:grid-cols-3 gap-12 py-12 animate-fade">
-       {/* Left Column: Mission Chat */}
-       <div className="lg:col-span-2 glass border-none flex flex-col h-[750px] shadow-2xl relative overflow-hidden bg-white/[0.02]">
-          <div className="p-6 border-b border-white/5 flex items-center justify-between bg-white/[0.01]">
-             <div className="flex items-center space-x-4">
-                <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center font-black text-indigo-400 border border-white/10">{otherUser?.full_name?.charAt(0)}</div>
-                <div>
-                   <h3 className="font-black text-white">{otherUser?.full_name}</h3>
-                   <div className="flex items-center text-[10px] text-emerald-500 font-bold uppercase tracking-widest animate-pulse">
-                      <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full mr-2 shadow-lg shadow-emerald-500/50"></div>
-                      Mission Active
-                   </div>
-                </div>
-             </div>
-             <div className="flex items-center space-x-2 badge border-none bg-indigo-500/10 text-indigo-400 px-4 py-2 font-bold uppercase text-[9px] tracking-widest">
-                <Zap className="w-3 h-3 mr-2" />
-                Live Channel
-             </div>
-          </div>
+    <div className="container px-6 space-y-12 py-12 animate-fade max-w-5xl mx-auto">
+      <Link to="/dashboard" className="inline-flex items-center text-slate-500 hover:text-white transition-colors group font-black uppercase text-xs tracking-widest leading-none bg-white/5 py-3 px-6 rounded-2xl border border-white/5">
+        <ChevronLeft className="w-4 h-4 mr-2 group-hover:-translate-x-1 transition-transform" />
+        Return to Dashboard
+      </Link>
 
-          <div className="flex-grow overflow-y-auto p-8 space-y-6 scrollbar-hide">
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`flex flex-col ${msg.sender_id === user.id ? 'items-end' : 'items-start'}`}>
-                <div className={`p-4 max-w-[80%] rounded-[20px] ${msg.sender_id === user.id ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-white/5 text-slate-300 rounded-tl-none border border-white/10'}`}>
-                   <p className="text-sm font-medium leading-relaxed">{msg.content}</p>
-                </div>
-                <span className="text-[9px] font-bold text-slate-600 uppercase tracking-widest mt-2 px-1">
-                   {format(new Date(msg.sent_at), 'HH:mm')}
-                </span>
-              </div>
-            ))}
-            <div ref={msgsEndRef}></div>
-          </div>
-
-          <form onSubmit={handleSendMessage} className="p-8 border-t border-white/5 bg-white/[0.01]">
-             <div className="relative group">
-                <input 
-                  type="text" 
-                  className="input pl-14 pr-14 py-5 rounded-[24px] bg-white/5 border border-white/10 shadow-lg" 
-                  placeholder="Transmit message..." 
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                />
-                <MessageSquare className="absolute left-5 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
-                <button type="submit" className="absolute right-3 top-1/2 -translate-y-1/2 p-3 bg-indigo-500 hover:bg-indigo-600 rounded-2xl text-white transition-all transform hover:scale-110 active:scale-95 shadow-lg shadow-indigo-500/25">
-                   <Send className="w-5 h-5" />
-                </button>
-             </div>
-          </form>
-       </div>
-
-       {/* Right Column: Mission Control */}
-       <div className="space-y-8 animate-slide">
-          {/* Mission Status Card */}
-          <div className="glass p-10 border-none bg-indigo-500/10 shadow-2xl shadow-indigo-500/5">
-             <div className="text-xs font-black text-indigo-400 uppercase tracking-widest mb-2">Phase: {contract.status}</div>
-             <h2 className="text-3xl font-black text-white leading-tight mb-8">Mission Control</h2>
+      <div className="grid lg:grid-cols-3 gap-12">
+        {/* Main Contract Dossier */}
+        <div className="lg:col-span-2 space-y-8">
+          <div className="glass p-12 space-y-8 border-none bg-indigo-500/[0.01] rounded-[48px] shadow-inner relative overflow-hidden">
+             <div className="absolute top-0 right-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500/30 to-transparent"></div>
              
-             <div className="space-y-6 pt-6 border-t border-white/5">
-                <div className="flex items-center justify-between group">
-                   <div className="flex items-center text-slate-500 font-bold uppercase text-[10px] tracking-widest">
-                      <DollarSign className="w-4 h-4 mr-2 group-hover:rotate-12 transition-transform" /> Budget
+             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+                <div className="space-y-2">
+                   <div className="text-indigo-400 text-[10px] font-black uppercase tracking-widest leading-none flex items-center gap-2">
+                      <FileText className="w-4 h-4" />
+                      Active Mission Contract #{contract.id.slice(0, 8).toUpperCase()}
                    </div>
-                   <div className="text-xl font-black text-white">${contract.amount}</div>
+                   <h1 className="text-4xl font-black text-white tracking-tighter uppercase leading-tight">{contract.gig?.title}</h1>
                 </div>
-                
-                <div className="flex items-center justify-between group">
-                   <div className="flex items-center text-slate-500 font-bold uppercase text-[10px] tracking-widest">
-                      <Clock className="w-4 h-4 mr-2 group-hover:rotate-12 transition-transform" /> Milestone
-                   </div>
-                   <div className="text-sm font-black text-white">Full Delivery</div>
-                </div>
-
-                <div className="flex items-center justify-between group">
-                   <div className="flex items-center text-slate-500 font-bold uppercase text-[10px] tracking-widest">
-                      <ShieldCheck className="w-4 h-4 mr-2 text-indigo-500" /> Security
-                   </div>
-                   <div className="text-[10px] font-black text-indigo-400 uppercase">Stripe Protected</div>
+                <div className={`px-6 py-3 rounded-2xl font-black uppercase text-[10px] tracking-[0.2em] border ${contract.status === 'active' ? 'bg-amber-500/10 text-amber-500 border-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'}`}>
+                   Mission {contract.status}
                 </div>
              </div>
 
-             <div className="pt-10 space-y-4">
-                {user.role === 'client' && contract.status === 'active' && (
-                  <button onClick={handlePayment} disabled={paying} className="btn btn-primary w-full py-5 text-sm font-black uppercase tracking-widest shadow-indigo-500/30">
-                    {paying ? 'Processing...' : 'Deposit Funds'}
-                  </button>
-                )}
-                
-                {user.role === 'freelancer' && contract.status === 'active' && (
-                   <button onClick={handleDelivery} className="btn btn-primary w-full py-5 text-sm font-black uppercase tracking-widest shadow-indigo-500/30">
-                      Submit Delivery
-                   </button>
-                )}
+             <div className="grid grid-cols-2 gap-8 pt-8 border-t border-white/5">
+                <ContractInfo icon={<DollarSign className="text-emerald-400" />} label="Contract Value" value={`$${contract.amount}`} />
+                <ContractInfo icon={<Calendar className="text-indigo-400" />} label="Launch Date" value={new Date(contract.created_at).toLocaleDateString()} />
+                <ContractInfo icon={<Briefcase className="text-secondary" />} label="Mission Mode" value="Fixed Reward" />
+                <ContractInfo icon={<ShieldCheck className="text-cyan-400" />} label="Escrow Status" value={contract.status === 'active' ? 'Held Secure' : 'Released'} />
+             </div>
 
-                {user.role === 'client' && contract.status === 'delivered' && (
-                   <button onClick={handleApproval} className="btn btn-primary w-full py-5 text-sm font-black uppercase tracking-widest shadow-indigo-500/30">
-                      Release Funds
-                   </button>
-                )}
-
-                {contract.status === 'completed' && (
-                   <div className="p-6 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-center font-black uppercase tracking-widest text-xs">
-                      <CheckCircle className="w-6 h-6 mx-auto mb-3" />
-                      Mission Success
-                   </div>
-                )}
+             <div className="space-y-6 pt-8 border-t border-white/5">
+                <h3 className="text-xl font-black text-white flex items-center gap-3">
+                   <Zap className="w-5 h-5 text-amber-500" />
+                   Mission Completion Requirements
+                </h3>
+                <div className="glass p-8 bg-white/[0.01] border-none rounded-[32px] text-slate-400 font-medium italic">
+                   "{contract.gig?.requirements?.join(', ') || 'All standard mission parameters apply.'}"
+                </div>
              </div>
           </div>
 
-          {/* User Preview */}
-          <div className="glass p-10 border-none bg-white/[0.01]">
-             <h3 className="text-[10px] font-black text-slate-600 uppercase tracking-widest mb-6">Partner Profile</h3>
-             <div className="flex items-center space-x-4 mb-4">
-               <div className="w-14 h-14 rounded-2xl bg-slate-800 flex items-center justify-center font-black text-2xl text-indigo-400 border border-white/5">{otherUser?.full_name?.charAt(0)}</div>
-               <div>
-                  <h4 className="font-bold text-white text-lg leading-none">{otherUser?.full_name}</h4>
-                  <p className="text-slate-500 text-xs font-medium mt-1 leading-relaxed">{user.role === 'client' ? 'Elite Freelancer' : 'Hiring Partner'}</p>
-               </div>
+          <div className="flex items-center gap-6 p-10 glass border-none bg-emerald-500/[0.02] rounded-[32px]">
+             <ShieldAlert className="w-10 h-10 text-indigo-400" />
+             <div className="space-y-1">
+                <h4 className="font-black text-white tracking-tight leading-none uppercase">Military-Grade Escrow Active</h4>
+                <p className="text-xs text-slate-500 font-medium">Funds are held by GigSphere and will only be released upon mutual confirmation of mission success.</p>
              </div>
-             <p className="text-xs text-slate-500 font-medium italic leading-relaxed py-4 border-t border-white/5 mt-6">
-                “Excellent communication and technical execution throughout the project lifecycle.”
-             </p>
           </div>
-       </div>
+        </div>
+
+        {/* Sidebar Actions */}
+        <div className="space-y-8">
+           <div className="glass p-10 space-y-8 border-none bg-indigo-500/[0.03] rounded-[48px]">
+              <div className="text-center space-y-4">
+                 <div className="text-indigo-400 text-[10px] font-black uppercase tracking-widest">Partner Identity</div>
+                 <div className="flex justify-center flex-col items-center gap-3">
+                    <div className="w-20 h-20 rounded-[1.5rem] bg-slate-800 border-4 border-indigo-500/20 flex items-center justify-center font-black text-3xl text-indigo-400 shadow-2xl">
+                       {isClient ? (contract.freelancer?.full_name?.charAt(0) || 'F') : (contract.client?.full_name?.charAt(0) || 'C')}
+                    </div>
+                    <div className="text-xl font-black text-white tracking-tight uppercase leading-none">
+                       {isClient ? contract.freelancer?.full_name : contract.client?.full_name}
+                    </div>
+                    <div className="text-indigo-400 text-[10px] font-black uppercase tracking-widest">{isClient ? 'Freelancer' : 'Client Partner'}</div>
+                 </div>
+              </div>
+
+              <div className="space-y-4">
+                 <button className="btn btn-outline w-full h-14 rounded-2xl border-white/5 text-[10px] font-black uppercase tracking-widest leading-none flex items-center justify-center group">
+                    Enter Secure Comms
+                    <MessageSquare className="ml-2 w-4 h-4 group-hover:scale-125 transition-transform" />
+                 </button>
+                 
+                 {contract.status === 'active' && (
+                    <div className="pt-4 space-y-4">
+                       {isFreelancer ? (
+                          <button 
+                            onClick={() => handleUpdateStatus('pending_review')}
+                            disabled={actionLoading}
+                            className="btn btn-primary w-full h-[4.5rem] rounded-[2rem] text-lg font-black tracking-tight"
+                          >
+                             {actionLoading ? <Loader2 className="animate-spin w-5 h-5 mx-auto" /> : (
+                                <span className="flex items-center gap-3">
+                                   Submit for Review
+                                   <ArrowRight className="w-6 h-6 hover:translate-x-1" />
+                                </span>
+                             )}
+                          </button>
+                       ) : isClient ? (
+                          <button 
+                             onClick={() => handleUpdateStatus('completed')}
+                             disabled={actionLoading}
+                             className="btn btn-primary w-full h-[4.5rem] rounded-[2rem] text-lg font-black tracking-tight bg-gradient-to-r from-emerald-500 to-cyan-500 shadow-emerald-500/20"
+                          >
+                             {actionLoading ? <Loader2 className="animate-spin w-5 h-5 mx-auto" /> : (
+                                <span className="flex items-center gap-3">
+                                   Release Escrow
+                                   <CheckCircle className="w-6 h-6" />
+                                </span>
+                             )}
+                          </button>
+                       ) : null}
+                    </div>
+                 )}
+              </div>
+           </div>
+
+           <div className="glass p-10 bg-white/[0.01] border-none flex items-center space-x-6 group rounded-[32px] hover:bg-white/[0.02] cursor-help">
+              <div className="w-14 h-14 rounded-2xl bg-amber-500/10 flex items-center justify-center text-amber-500">
+                 <Lock className="w-7 h-7" />
+              </div>
+              <div>
+                <h4 className="font-black text-white leading-none uppercase tracking-tight">Escrow Help</h4>
+                <p className="text-xs text-slate-500 font-medium mt-1">Dispute resolution.</p>
+              </div>
+           </div>
+        </div>
+      </div>
     </div>
   );
 };
+
+const ContractInfo = ({ icon, label, value }) => (
+  <div className="space-y-1 group">
+    <div className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-2">
+       {React.cloneElement(icon, { size: 12 })}
+       {label}
+    </div>
+    <div className="text-xl font-black text-white tracking-widest group-hover:text-indigo-400 transition-colors uppercase">{value}</div>
+  </div>
+);
 
 export default ContractDetails;
