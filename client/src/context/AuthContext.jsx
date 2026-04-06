@@ -1,45 +1,109 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import axios from 'axios';
+import { supabase } from '../utils/supabase';
 
 const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [token, setToken] = useState(localStorage.getItem('token'));
   const [loading, setLoading] = useState(true);
 
-  // Configure Axios Defaults
   useEffect(() => {
-    if (token) {
-      axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-      setLoading(true);
-      // Optional: Fetch user profile to verify token
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) setUser(JSON.parse(storedUser));
-      setLoading(false);
-    } else {
-      delete axios.defaults.headers.common['Authorization'];
-      setUser(null);
+    // Get initial session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        // Fetch user profile
+        fetchProfile(session.user);
+      } else {
+        setLoading(false);
+      }
+    });
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (session) {
+        fetchProfile(session.user);
+      } else {
+        setUser(null);
+        setLoading(false);
+      }
+    });
+
+    return () => subscription.unsubscribe();
+  }, []);
+
+  const fetchProfile = async (supabaseUser) => {
+    try {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', supabaseUser.id)
+        .single();
+
+      if (data) {
+        setUser({ ...supabaseUser, role: data.role, full_name: data.full_name });
+      } else {
+        // Fallback if profile doesn't exist yet
+        setUser(supabaseUser);
+      }
+    } catch (err) {
+      console.error('Error fetching profile:', err);
+      setUser(supabaseUser);
+    } finally {
       setLoading(false);
     }
-  }, [token]);
-
-  const login = (userData, userToken) => {
-    localStorage.setItem('token', userToken);
-    localStorage.setItem('user', JSON.stringify(userData));
-    setToken(userToken);
-    setUser(userData);
   };
 
-  const logout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    setToken(null);
-    setUser(null);
+  const register = async (email, password, fullName, role) => {
+    try {
+      // 1. Sign up to Supabase Auth
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: { full_name: fullName, role: role }
+        }
+      });
+
+      if (error) return { success: false, error: error.message };
+
+      // 2. Create user record in our custom users table
+      const { error: profileError } = await supabase
+        .from('users')
+        .insert([{
+          id: data.user.id,
+          email,
+          full_name: fullName,
+          role
+        }]);
+
+      if (profileError) console.error('Profile creation error:', profileError);
+
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const login = async (email, password) => {
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) return { success: false, error: error.message };
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, login, logout, loading }}>
+    <AuthContext.Provider value={{ user, loading, register, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

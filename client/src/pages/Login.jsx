@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axios from 'axios';
 import { useAuth } from '../context/AuthContext';
 import { Mail, Lock, Loader2, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
 
@@ -18,11 +17,14 @@ const Login = () => {
     setError('');
     
     try {
-      const response = await axios.post('http://localhost:5000/api/auth/login', { email, password });
-      login(response.data.data.user, response.data.data.accessToken);
-      navigate('/dashboard');
+      const result = await login(email, password);
+      if (result.success) {
+        navigate('/dashboard');
+      } else {
+        setError(result.error || 'Login failed. Security breach detected.');
+      }
     } catch (err) {
-      setError(err.response?.data?.message || 'Login failed. Please try again.');
+      setError('An unexpected error occurred. Access denied.');
     } finally {
       setLoading(false);
     }
@@ -31,7 +33,6 @@ const Login = () => {
   return (
     <div className="flex items-center justify-center py-20 px-6">
       <div className="w-full max-w-md space-y-8 glass p-10 relative overflow-hidden group border-white/5 hover:border-indigo-500/30 transition-all duration-500">
-        {/* Animated Background Glow */}
         <div className="absolute -top-20 -right-20 w-40 h-40 bg-indigo-500/10 rounded-full blur-3xl group-hover:bg-indigo-500/20 transition-all duration-700"></div>
         <div className="absolute -bottom-20 -left-20 w-40 h-40 bg-secondary/10 rounded-full blur-3xl group-hover:bg-secondary/20 transition-all duration-700"></div>
 
@@ -54,42 +55,36 @@ const Login = () => {
         )}
 
         <form className="space-y-6 relative z-10" onSubmit={handleSubmit}>
-          <div className="space-y-5">
-            <div className="space-y-2">
-              <label className="text-xs font-black uppercase tracking-widest text-slate-500 ml-1">Secure Email</label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
-                <input
-                  type="email"
-                  required
-                  className="input pl-12 h-16 bg-black/20 border-white/5 focus:border-indigo-500/50 transition-all text-lg font-medium"
-                  placeholder="nanda@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
-              </div>
+          <div className="space-y-4">
+            <div className="relative">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+              <input
+                type="email"
+                required
+                className="input pl-12 h-16 bg-black/20 border-white/5 focus:border-indigo-500/50 transition-all text-lg font-medium"
+                placeholder="nanda@example.com"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
             
-            <div className="space-y-2">
-              <label className="text-xs font-black uppercase tracking-widest text-slate-500 ml-1">Access Phrase</label>
-              <div className="relative">
-                <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
-                <input
-                  type="password"
-                  required
-                  className="input pl-12 h-16 bg-black/20 border-white/5 focus:border-indigo-500/50 transition-all text-lg font-medium"
-                  placeholder="********"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
+            <div className="relative">
+              <Lock className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+              <input
+                type="password"
+                required
+                className="input pl-12 h-16 bg-black/20 border-white/5 focus:border-indigo-500/50 transition-all text-lg font-medium"
+                placeholder="********"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
             </div>
           </div>
 
           <button
             type="submit"
             disabled={loading}
-            className="btn btn-primary w-full h-16 text-xl font-black tracking-tight flex items-center justify-center shadow-2xl shadow-indigo-500/20 group/btn overflow-hidden"
+            className="btn btn-primary w-full h-16 text-xl font-black tracking-tight flex items-center justify-center shadow-2xl shadow-indigo-500/20 group/btn"
           >
             {loading ? (
               <Loader2 className="animate-spin w-6 h-6" />
@@ -102,8 +97,7 @@ const Login = () => {
           </button>
         </form>
 
-        <div className="text-center pt-6 items-center flex flex-col gap-4 relative z-10">
-          <div className="h-px w-full bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
+        <div className="text-center pt-6 space-y-4 relative z-10">
           <p className="text-slate-500 text-base font-medium">
             New to the sphere?{' '}
             <Link to="/register" className="text-indigo-400 hover:text-indigo-300 transition-all font-black decoration-indigo-400/30 underline-offset-8 hover:underline">
