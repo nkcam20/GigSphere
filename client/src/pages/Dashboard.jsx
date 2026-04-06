@@ -144,7 +144,7 @@ const Dashboard = () => {
                </Link>
             </div>
 
-            <div className="glass p-10 bg-white/[0.01] border-none flex items-center space-x-6 group rounded-[32px]">
+            <Link to="/chat" className="glass p-10 bg-white/[0.01] border-none flex items-center space-x-6 group rounded-[32px] hover:bg-white/[0.05] transition-all cursor-pointer block">
                <div className="w-12 h-12 rounded-xl bg-cyan-400/10 flex items-center justify-center text-cyan-400 group-hover:rotate-12 transition-transform">
                   <MessageSquare className="w-6 h-6" />
                </div>
@@ -152,7 +152,7 @@ const Dashboard = () => {
                   <h4 className="font-bold text-white leading-none">Sphere Chat</h4>
                   <p className="text-xs text-slate-500 font-medium mt-1 text-nowrap">Connect with partners instantly.</p>
                </div>
-            </div>
+            </Link>
          </div>
       </div>
     </div>

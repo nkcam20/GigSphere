@@ -12,6 +12,7 @@ import Landing from './pages/Landing';
 import ContractDetails from './pages/ContractDetails';
 import Profile from './pages/Profile';
 import AdminDashboard from './pages/AdminDashboard';
+import Chat from './pages/Chat';
 
 const ProtectedRoute = ({ children, allowedRoles = [] }) => {
   const { user, loading } = useAuth();
@@ -40,6 +41,7 @@ const AppContent = () => {
             
             {/* Protected Routes */}
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+            <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
             <Route path="/post-gig" element={<ProtectedRoute allowedRoles={['client']}><PostGig /></ProtectedRoute>} />
             <Route path="/contracts/:id" element={<ProtectedRoute><ContractDetails /></ProtectedRoute>} />
             <Route path="/profile/:id" element={<Profile />} />
